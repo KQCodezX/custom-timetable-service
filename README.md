@@ -1,136 +1,237 @@
-# template-api
+# Custom Timetable Service
 
-A small Fastify + TypeScript service with MongoDB built in. Bun runs it and Biome keeps it tidy. With no configuration at all, dev and tests spin up a throwaway in-memory MongoDB, so `bun install && bun run dev` is genuinely all it takes to get going.
+Backend service for managing user-created custom events alongside a university timetable.
 
-## What you need
+The service provides authenticated CRUD operations for custom events, per-user data isolation, date-range filtering, and iCalendar (`.ics`) export. It is implemented with Fastify, TypeScript, Bun, and MongoDB, with Docker Compose support for running the API and database together.
 
-Bun 1.4.2 or newer. Older versions break the MongoDB driver; 1.3.14 will not work. Docker is only worth installing if you want a database that survives restarts.
+## Features
 
-## Running it
+- Create, list, retrieve, update, and delete custom timetable events
+- Bearer-token authentication with per-user event isolation
+- Validation for event fields and time ranges
+- Overlap-aware date-range filtering
+- iCalendar (`.ics`) export
+- MongoDB index on `(userId, startAt)`
+- Integration tests for authentication, CRUD, isolation, validation, and export
+- Dockerized API and MongoDB setup
 
-```sh
+## API
+
+All event endpoints require a bearer token.
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/events` | Create a custom event |
+| `GET` | `/events` | List the authenticated user's events |
+| `GET` | `/events/:id` | Retrieve one event |
+| `PATCH` | `/events/:id` | Partially update one event |
+| `DELETE` | `/events/:id` | Delete one event |
+| `GET` | `/events/export.ics` | Export the user's events as iCalendar |
+
+See [API.md](API.md) for request/response details and examples.
+
+## Architecture
+
+The implementation keeps HTTP handling separate from event business logic:
+
+```text
+HTTP request
+    ↓
+Bearer-token authentication
+    ↓
+Fastify route
+    ↓
+Custom event service
+    ↓
+MongoDB
+```
+
+Routes are responsible for request validation and HTTP responses. The service layer owns event business rules and database operations, while `ical.ts` handles calendar serialization.
+
+## Authorization and data isolation
+
+Each event stores its owning user's identifier.
+
+Database operations are scoped by both the requested event ID and the authenticated user's ID. This means that knowing another user's event UUID is not enough to access or modify it.
+
+For example, if Bob requests Alice's event, the lookup behaves as:
+
+```text
+_id = event ID
+AND
+userId = Bob
+```
+
+Since Alice's event does not satisfy both conditions, the API returns `404`.
+
+## Time handling
+
+Clients send RFC 3339 timestamps.
+
+MongoDB stores them as date values so chronological queries and indexes operate on actual time values. Responses are serialized as ISO 8601 timestamps.
+
+Date-range queries use event overlap rather than only checking the start time:
+
+```text
+event.endAt > from
+AND
+event.startAt < to
+```
+
+This includes events that started before the requested window but continue into it.
+
+## Extra feature: iCalendar export
+
+The service supports:
+
+```text
+GET /events/export.ics
+```
+
+The export generates iCalendar `VEVENT` records containing the event's UID, timestamps, title, and optional description/location fields.
+
+I chose iCalendar export as the extra feature because it is directly useful for timetable events while keeping the core data model simple. Recurring events would introduce additional complexity around recurrence rules, exceptions, and time zones.
+
+## Local development
+
+### Requirements
+
+- Bun 1.4.2+
+- Docker Desktop (optional for running the persistent MongoDB service)
+
+### Install dependencies
+
+```bash
 bun install
+```
+
+### Run the development server
+
+```bash
 bun run dev
 ```
 
-That serves http://localhost:3000. The first run downloads an in-memory MongoDB binary, roughly 150 MB, once. After that it's cached and startup is quick. If you'd rather have persistent data:
+The API runs at:
 
-```sh
-docker compose up -d
-cp .env.example .env
+```text
+http://localhost:3000
 ```
 
-## Environment
+Swagger UI:
 
-Everything here is optional. Copy `.env.example` to `.env` and set what you need.
-
-| Variable | What it does |
-| --- | --- |
-| `MONGO_URI` | MongoDB URI for dev. Unset means in-memory. |
-| `MONGO_TEST_URI` | Same thing, but for `bun test`. |
-| `AUTH_SKIP` | Set to `true` to turn auth off locally. |
-
-## Scripts
-
-| Script | What it does |
-| --- | --- |
-| `bun run dev` | Dev server, watch mode, debug logs |
-| `bun run start` | Same without watch, info logs |
-| `bun run test` | Tests, with coverage |
-| `bun run compile` | Type-check `src` and `test` with `tsc` |
-| `bun run check` | Read-only formatting + lint check |
-| `bun run lint` | Auto-fix lint issues |
-| `bun run fmt` | Auto-format the repo |
-
-## Auth
-
-Users and their tokens live in `src/auth/users.ts`. There are two sample users, alice and bob, and their tokens act as passwords, so replace them before deploying anything real. Protected routes want a bearer header:
-
-```sh
-curl http://localhost:3000/auth-example
-# 401 Missing Authorization Header
-
-curl -H "Authorization: Bearer alice-dev-token" http://localhost:3000/auth-example
-# alice
+```text
+http://localhost:3000/documentation
 ```
 
-To protect your own routes, wrap them in a `fastify.withAuth` scope. Everything inside is protected, the auth error responses get documented for you, and `request.user` is typed non-null:
+Scalar:
 
-```typescript
-const authExample: FastifyPluginAsync = async (
-  fastify: FastifyTypebox,
-): Promise<void> => {
-  fastify.withAuth(async (fastify) => {
-    fastify.get(
-      "/",
-      {
-        schema: {
-          summary: "Auth Example",
-          tags: ["Auth"],
-          security: [{ Auth: [] }],
-          response: {
-            200: Type.String({
-              description: "The authenticated user's username.",
-            }),
-          },
-        },
-      },
-      async (request) => request.user.username,
-    );
-  });
-};
+```text
+http://localhost:3000/reference
 ```
 
-Setting `AUTH_SKIP=true` turns verification off completely. Scoped requests then come in as a fixed anonymous user (`{ username: "anonymous", name: null }`, plus an `X-Auth-Skip: true` response header), and stale tokens in your HTTP client stop causing mystery 401s.
+By default, development uses an in-memory MongoDB instance.
 
-## API docs
+### Run the tests
 
-Swagger UI is at http://localhost:3000/documentation, Scalar at http://localhost:3000/reference.
-
-## Where things live
-
+```bash
+bun test
 ```
-src/
-  app.ts                # Fastify app: options, plugins, routes
-  options.ts            # Environment variable parsing
-  plugins/
-    auth.ts             # Bearer-token auth plugin + withAuth scope
-    init-mongo.ts       # Collections and index bootstrap
-    sensible.ts         # @fastify/sensible error helpers
-  auth/
-    users.ts            # Users and tokens
-  routes/
-    example/            # Public example route
-    auth-example/       # Protected example route
-test/
-  routes/               # Route tests
-  auth-schema.test.ts   # withAuth schema-merging contract tests
-  init-mongo.test.ts    # MongoDB URI-defaulting tests
-  mongo.test.ts         # Full-app boot + in-memory MongoDB wiring
-  options.test.ts       # Env parsing tests
+
+### Run static checks
+
+```bash
+bun run compile
+bun run check
 ```
+
+## Docker
+
+The complete application can be run with:
+
+```bash
+docker compose up --build
+```
+
+This starts:
+
+- the Fastify API
+- a MongoDB instance
+- a healthcheck so the API waits for MongoDB to become ready
+
+The MongoDB data directory is stored in a Docker volume so it survives container restarts.
+
+## Demo authentication
+
+The development authentication provides two users:
+
+```text
+Alice: Bearer alice-dev-token
+Bob:   Bearer bob-dev-token
+```
+
+These tokens are only for local development and testing.
 
 ## Tests
 
-`bun run test` runs everything. Route tests exercise each plugin on a bare Fastify instance; the Mongo test boots the whole app, plugins autoloaded and collections created, against the in-memory server unless `MONGO_TEST_URI` is set. No external services anywhere.
+The test suite covers:
 
-## Adding your own stuff
+- unauthenticated requests
+- event creation and retrieval
+- partial updates
+- deletion
+- per-user isolation
+- invalid event ranges
+- iCalendar export
+- MongoDB initialization and collection registration
 
-New routes go in a folder under `src/routes/`; the autoload picks them up, and an exported `autoPrefix` controls the URL prefix if you want one. New collections and their indexes go in `src/plugins/init-mongo.ts`, following the `example` pattern, and show up as `fastify.collections.<name>`.
+## Design notes
 
-# Custom Timetable Events
+### Why MongoDB?
 
-This service extends the university timetable backend with user-owned custom events.
+The supplied USThing starter already provides MongoDB integration and in-memory MongoDB support for development and tests. Reusing that infrastructure keeps the implementation focused on the requested timetable feature.
 
-## Highlights
+### Why PATCH?
 
-- CRUD for custom events
-- bearer-token authorization with per-user data isolation
-- RFC 3339 timestamp validation
-- overlap-aware date-range filtering
-- iCalendar `.ics` export
-- MongoDB index on `(userId, startAt)`
-- integration tests covering auth, CRUD, isolation, validation, and export
-- Docker container for the API plus Docker Compose for the API and MongoDB
+Events can be modified field-by-field, so `PATCH` matches the partial-update behavior of the API.
 
-See `API.md` for the API contract and `SETUP.md` for the exact changes needed on top of the USThing starter.
+### Why a `(userId, startAt)` index?
+
+The main list operation is scoped to a single user and ordered by event start time. The compound index matches that access pattern.
+
+### Why return 404 for another user's event?
+
+The service queries by both event ID and authenticated user ID. Returning `404` makes an unauthorized event indistinguishable from a nonexistent one.
+
+### Production considerations
+
+For a production deployment, I would replace the development bearer tokens with the university's real identity provider, move credentials entirely outside source control, add pagination for large event collections, and add rate limiting and audit logging.
+
+## Project structure
+
+```text
+src/
+  app.ts
+  options.ts
+  auth/
+    users.ts
+  plugins/
+    auth.ts
+    init-mongo.ts
+    sensible.ts
+  routes/
+    events/
+      index.ts
+  services/
+    custom-events.ts
+    ical.ts
+  types/
+    custom-event.ts
+
+test/
+  routes/
+    events.test.ts
+  auth-schema.test.ts
+  init-mongo.test.ts
+  mongo.test.ts
+  options.test.ts
+```

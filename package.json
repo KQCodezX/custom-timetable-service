@@ -1,9 +1,9 @@
 {
   "type": "module",
-  "name": "template-api",
+  "name": "custom-timetable-service",
   "version": "0.0.0",
   "private": true,
-  "description": "A simple, singular Fastify + TypeScript + MongoDB service template for USThing, running on Bun.",
+  "description": "Backend service for user-owned custom timetable events.",
   "main": "src/app.ts",
   "directories": {
     "test": "test"
@@ -21,7 +21,7 @@
     "bun": ">=1.4.2"
   },
   "keywords": [],
-  "author": "USThing Team",
+  "author": "Kaung Khant Kyaw Zaw",
   "license": "MIT",
   "dependencies": {
     "@fastify/autoload": "^6.5.0",
