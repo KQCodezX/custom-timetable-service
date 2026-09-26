@@ -117,3 +117,20 @@ test/
 ## Adding your own stuff
 
 New routes go in a folder under `src/routes/`; the autoload picks them up, and an exported `autoPrefix` controls the URL prefix if you want one. New collections and their indexes go in `src/plugins/init-mongo.ts`, following the `example` pattern, and show up as `fastify.collections.<name>`.
+
+# Custom Timetable Events
+
+This service extends the university timetable backend with user-owned custom events.
+
+## Highlights
+
+- CRUD for custom events
+- bearer-token authorization with per-user data isolation
+- RFC 3339 timestamp validation
+- overlap-aware date-range filtering
+- iCalendar `.ics` export
+- MongoDB index on `(userId, startAt)`
+- integration tests covering auth, CRUD, isolation, validation, and export
+- Docker container for the API plus Docker Compose for the API and MongoDB
+
+See `API.md` for the API contract and `SETUP.md` for the exact changes needed on top of the USThing starter.
