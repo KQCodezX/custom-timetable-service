@@ -1,22 +1,10 @@
-// Proves the default MongoDB wiring: with no MONGO_URI configured, building
-// the app spawns an in-memory MongoDB and prepares the `example` collection —
-// no external services needed.
-//
-// The app plugin is wrapped in `fastify-plugin` at the registration site (the
-// same pattern the production dev scripts use) so the decorators added by the
-// autoloaded plugins (`fastify.collections`, `fastify.mongo`) collapse onto
-// this root instance: fastify-cli's `helper.build` keeps them scoped inside
-// the autoloader, invisible to the instance it returns.
-
 import { onTestFinished, test } from "bun:test";
 import * as assert from "node:assert";
 import Fastify from "fastify";
 import fp from "fastify-plugin";
 import App from "../src/app.js";
 
-test("the example collection roundtrips documents in the in-memory MongoDB", async () => {
-  // pluginTimeout covers the first-run download of the in-memory MongoDB
-  // binary, which can outlast Fastify's 10s default.
+test("the custom events collection roundtrips documents in the in-memory MongoDB", async () => {
   const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
   onTestFinished(() => app.close());
 
@@ -27,14 +15,24 @@ test("the example collection roundtrips documents in the in-memory MongoDB", asy
   });
   await app.ready();
 
-  const inserted = await app.collections.example.insertOne({ example: 42 });
-  const found = await app.collections.example.findOne({
+  const inserted = await app.collections.customEvents.insertOne({
+    _id: "test-event",
+    userId: "alice",
+    title: "Test Event",
+    startAt: new Date("2026-10-01T09:00:00Z"),
+    endAt: new Date("2026-10-01T10:00:00Z"),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const found = await app.collections.customEvents.findOne({
     _id: inserted.insertedId,
   });
-  assert.equal(found?.example, 42);
+
+  assert.equal(found?.title, "Test Event");
 });
 
-test("the app reports ready with the collections decorated", async () => {
+test("the app reports ready with the custom events collection decorated", async () => {
   const app = Fastify({ pluginTimeout: 5 * 60 * 1000 });
   onTestFinished(() => app.close());
 
@@ -46,5 +44,6 @@ test("the app reports ready with the collections decorated", async () => {
   await app.ready();
 
   assert.ok(app.collections);
+  assert.ok(app.collections.customEvents);
   assert.ok(typeof app.withAuth === "function");
 });
