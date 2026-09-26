@@ -20,7 +20,6 @@ import { type AppOptions, options } from "./options.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Support Typebox
 export type FastifyTypebox = FastifyInstance<
   RawServerDefault,
   RawRequestDefaultExpression<RawServerDefault>,
@@ -29,25 +28,14 @@ export type FastifyTypebox = FastifyInstance<
   TypeBoxTypeProvider
 >;
 
-/**
- * Builds the Fastify application.
- *
- * Cross-cutting plugins are autoloaded from `src/plugins` (MongoDB, auth,
- * sensible), route services from `src/routes`. Swagger documents the API at
- * `/documentation` and Scalar renders it at `/reference`.
- */
 const app: FastifyPluginAsync<AppOptions> = async (
   fastify,
   opts,
 ): Promise<void> => {
-  // Place here your custom code!
-
-  // Register CORS
   await fastify.register(cors, {
     origin: "*",
   });
 
-  // Register Swagger & Swagger UI & Scalar
   await fastify.register(swagger, {
     openapi: {
       info: {
@@ -62,7 +50,7 @@ const app: FastifyPluginAsync<AppOptions> = async (
         },
       ],
       tags: [
-        { name: "Example", description: "Example endpoints" },
+        { name: "Custom Events", description: "User-created timetable events" },
         { name: "Auth", description: "Auth endpoints" },
       ],
       components: {
@@ -80,22 +68,16 @@ const app: FastifyPluginAsync<AppOptions> = async (
       },
     },
   });
+
   await fastify.register(swaggerUi);
   await fastify.register(scalarApiReference);
 
-  // Do not touch the following lines
-
-  // This loads all plugins defined in plugins
-  // those should be support plugins that are reused
-  // through your application
   void fastify.register(AutoLoad, {
     dir: path.join(__dirname, "plugins"),
     options: opts,
     forceESM: true,
   });
 
-  // This loads all plugins defined in routes
-  // define your routes in one of these
   void fastify.register(AutoLoad, {
     dir: path.join(__dirname, "routes"),
     options: opts,
